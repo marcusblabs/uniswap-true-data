@@ -1,0 +1,54 @@
+name: Refresh pool data and deploy
+
+# GeckoTerminal's free tier allows 30 requests a minute and the collector makes
+# a few hundred, so a full pass takes ~10-15 minutes. That belongs in CI once a
+# night, never in a page load.
+
+on:
+  schedule:
+    - cron: '41 3 * * *' # 03:41 UTC, off the hour
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # If GeckoTerminal is unreachable or rate-limits us out, keep the
+      # committed pools.json rather than publishing an empty table.
+      - name: Refresh pool data
+        run: npm run collect
+        continue-on-error: true
+
+      - run: npm run build
+
+      - name: Publish dist to gh-pages
+        run: |
+          cd dist
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Deploy ${GITHUB_SHA::7}"
+          git push -q --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
