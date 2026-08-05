@@ -8,18 +8,29 @@ const DATA_URL = `${import.meta.env?.BASE_URL ?? '/'}pools.json`
 export default function App() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
 
-  useEffect(() => {
-    let on = true
-    fetch(DATA_URL, { cache: 'no-cache' })
+  // 'reload' skips the cache entirely, so the button genuinely re-reads the
+  // file rather than handing back what the browser already had. The data is
+  // rebuilt nightly by CI, so this fetches the newest build — it cannot
+  // re-scrape the source live, which takes tens of minutes.
+  const load = (bypassCache) => {
+    setErr(null)
+    return fetch(DATA_URL, { cache: bypassCache ? 'reload' : 'no-cache' })
       .then((r) => {
         if (!r.ok) throw new Error(`pools.json ${r.status}`)
         return r.json()
       })
-      .then((d) => on && setData(d))
-      .catch((e) => on && setErr(e))
-    return () => { on = false }
-  }, [])
+      .then(setData)
+      .catch(setErr)
+  }
+
+  useEffect(() => { load(false) }, [])
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    try { await load(true) } finally { setRefreshing(false) }
+  }
 
   return (
     <>
@@ -41,7 +52,7 @@ export default function App() {
 
       {err && <div className="err">{String(err.message || err)}</div>}
       {!data && !err && <div className="loading">Loading pool data…</div>}
-      {data && <PoolTable data={data} />}
+      {data && <PoolTable data={data} onRefresh={onRefresh} refreshing={refreshing} />}
     </>
   )
 }

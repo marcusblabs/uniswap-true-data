@@ -306,3 +306,25 @@ td.num.est-val { color: #d9cfae; }
 .lstag.lst-warn  { color: var(--purple-soft); border-color: rgba(127,106,232,.4); }
 .lstag.lst-hide  { color: var(--amber); border-color: rgba(242,192,99,.5); background: rgba(242,192,99,.12); }
 .lstag.lst-block { color: var(--red);   border-color: rgba(242,99,110,.5);  background: rgba(242,99,110,.12); }
+
+/* ---- column picker, links ---- */
+.colwrap { position: relative; display: inline-block; }
+.colmenu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 7px;
+  box-shadow: var(--elev); padding: 8px; min-width: 190px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.colmenu label {
+  display: flex; align-items: center; gap: 7px; font-size: 12px;
+  padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap;
+}
+.colmenu label:hover { background: rgba(127, 106, 232, .12); }
+.colmenu label.dim { opacity: .5; cursor: default; }
+.colmenu input { accent-color: var(--purple); }
+.colmenu .fbtn { margin-top: 6px; }
+.exlink { margin-left: 7px; font-size: 11px; color: var(--muted); text-decoration: none; }
+.exlink:hover { color: var(--purple-soft); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); }
+td.pos { color: var(--green); } td.neg { color: var(--red); }
+.pooltable .pos { color: var(--green); } .pooltable .neg { color: var(--red); }

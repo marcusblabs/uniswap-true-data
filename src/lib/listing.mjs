@@ -15,19 +15,19 @@
 // Unichain ids purely because of the chain name, and a regex would quietly
 // pull in another DEX's pools.
 export const CHAINS = {
-  eth:         { name: 'Ethereum',  short: 'ETH',  chainId: 1,     explorer: 'https://etherscan.io/address/',
+  eth:         { uniSlug: 'ethereum', name: 'Ethereum',  short: 'ETH',  chainId: 1,     explorer: 'https://etherscan.io/address/',
                  dexes: { uniswap_v2: 2, uniswap_v3: 3, 'uniswap-v4-ethereum': 4 } },
-  base:        { chainId: 8453, name: 'Base',      short: 'BASE', explorer: 'https://basescan.org/address/',
+  base:        { uniSlug: 'base', chainId: 8453, name: 'Base',      short: 'BASE', explorer: 'https://basescan.org/address/',
                  dexes: { 'uniswap-v2-base': 2, 'uniswap-v3-base': 3, 'uniswap-v4-base': 4 } },
-  arbitrum:    { chainId: 42161, name: 'Arbitrum',  short: 'ARB',  explorer: 'https://arbiscan.io/address/',
+  arbitrum:    { uniSlug: 'arbitrum', chainId: 42161, name: 'Arbitrum',  short: 'ARB',  explorer: 'https://arbiscan.io/address/',
                  dexes: { 'uniswap-v2-arbitrum': 2, uniswap_v3_arbitrum: 3, 'uniswap-v4-arbitrum': 4 } },
-  polygon_pos: { chainId: 137, name: 'Polygon',   short: 'POLY', explorer: 'https://polygonscan.com/address/',
+  polygon_pos: { uniSlug: 'polygon', chainId: 137, name: 'Polygon',   short: 'POLY', explorer: 'https://polygonscan.com/address/',
                  dexes: { 'uniswap-v2-polygon': 2, uniswap_v3_polygon_pos: 3, 'uniswap-v4-polygon': 4 } },
-  optimism:    { chainId: 10, name: 'Optimism',  short: 'OP',   explorer: 'https://optimistic.etherscan.io/address/',
+  optimism:    { uniSlug: 'optimism', chainId: 10, name: 'Optimism',  short: 'OP',   explorer: 'https://optimistic.etherscan.io/address/',
                  dexes: { 'uniswap-v2-optimism': 2, uniswap_v3_optimism: 3, 'uniswap-v4-optimism': 4 } },
-  avax:        { chainId: 43114, name: 'Avalanche', short: 'AVAX', explorer: 'https://snowtrace.io/address/',
+  avax:        { uniSlug: 'avalanche', chainId: 43114, name: 'Avalanche', short: 'AVAX', explorer: 'https://snowtrace.io/address/',
                  dexes: { 'uniswap-v2-avalanche': 2, 'uniswap-v3-avalanche': 3, 'uniswap-v4-avalanche': 4 } },
-  monad:       { chainId: 143, name: 'Monad',     short: 'MON',  explorer: 'https://monadexplorer.com/address/',
+  monad:       { uniSlug: 'monad', chainId: 143, name: 'Monad',     short: 'MON',  explorer: 'https://monadexplorer.com/address/',
                  dexes: { 'uniswap-v2-monad': 2, 'uniswap-v3-monad': 3, 'uniswap-v4-monad': 4 } },
 }
 

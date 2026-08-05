@@ -205,7 +205,9 @@ const out = {
     noTvl: pools.filter((p) => !(p.tvl > 0)).length,
     byListing: pools.reduce((m, p) => ({ ...m, [p.listing]: (m[p.listing] || 0) + 1 }), {}),
   },
-  chains: Object.values(CHAINS).map((c) => ({ name: c.name, short: c.short, explorer: c.explorer })),
+  chains: Object.values(CHAINS).map((c) => ({
+    name: c.name, short: c.short, explorer: c.explorer, uniSlug: c.uniSlug,
+  })),
   pools,
 }
 
