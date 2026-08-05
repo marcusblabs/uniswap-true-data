@@ -61,7 +61,9 @@ where a real contract exists.
 Uniswap publishes `unsupportedtokens.uniswap.org` (596 tokens) as its own scam-and-warning
 blocklist — the source behind the warning interstitials in its app. Pools holding one of those
 tokens are flagged `blocked` and **left out of the table by default**; the toggle says how many, so
-the exclusion is visible rather than silent. Five pools currently qualify, led by TORN/WETH.
+the exclusion is visible rather than silent. Only a handful qualify on any given night — a few out
+of ~3,500 — because pools are collected in volume order and outright scam tokens mostly sit below
+the coverage floor rather than being absent from the source.
 
 That list is separate from the three-way listing status, which is about whether the app will show a
 pool at all: `listed` (on the default token list), `search-only` (extended list — reachable by
