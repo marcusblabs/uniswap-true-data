@@ -1,6 +1,6 @@
 # Uniswap True Data
 
-Uniswap pools across **v2, v3 and v4** on nine chains — TVL, volume and fees, with every figure
+Uniswap pools across **v2, v3 and v4** on the seven chains where Balancer v3 also runs — TVL, volume and fees, with every figure
 labelled by how it was obtained.
 
 Live: https://marcusblabs.github.io/uniswap-true-data/

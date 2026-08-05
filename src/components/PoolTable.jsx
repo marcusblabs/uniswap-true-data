@@ -15,8 +15,18 @@ const fmtFee = (f) => (f == null ? null : (f * 100).toFixed(f < 0.001 ? 3 : 2).r
 // LP take-home. Anything downstream of that is marked in the UI.
 const feeApr = (p) => (p.fees24 == null || !(p.tvl > 0) ? null : (p.fees24 * 365 * 100) / p.tvl)
 
+// How Uniswap's own app would treat the pool, derived from its token lists.
+const LISTING = {
+  listed:        { label: 'listed',      cls: 'lst-ok',    t: 'Both tokens are on Uniswap\u2019s default list — this pool shows up normally in the app.' },
+  'search-only': { label: 'search only', cls: 'lst-warn',  t: 'Tokens are on the extended list: findable in the app, but only if you search for them.' },
+  unlisted:      { label: 'UNLISTED',    cls: 'lst-hide',  t: 'At least one token is on none of Uniswap\u2019s lists. You cannot reach this pool by browsing the app — only by pasting the address, behind warnings.' },
+  blocked:       { label: 'BLOCKED',     cls: 'lst-block', t: 'A token is on Uniswap\u2019s UNSUPPORTED list. The interface actively blocks or warns against this pool.' },
+  unknown:       { label: '—',           cls: 'dim',       t: 'Token addresses or chain id unavailable, so listing status could not be determined.' },
+}
+
 const COLS = [
   { k: 'name', l: 'Pool', a: 'l' },
+  { k: 'listing', l: 'In the app?', a: 'l', t: 'Whether Uniswap\u2019s own interface will show you this pool, judged against its default / extended / unsupported token lists.' },
   { k: 'version', l: 'Ver', a: 'l' },
   { k: 'chain', l: 'Chain', a: 'l' },
   { k: 'swapFee', l: 'Fee tier', a: 'r', t: 'Read from the pool name — GeckoTerminal exposes no fee field. v2 is a fixed 0.30%. Blank for v4 dynamic-fee and hook pools.' },
@@ -31,6 +41,7 @@ const COLS = [
 function sortVal(p, k) {
   switch (k) {
     case 'name': return (p.name || '').toLowerCase()
+    case 'listing': return ['unlisted', 'blocked', 'search-only', 'listed', 'unknown'].indexOf(p.listing)
     case 'version': return p.version
     case 'chain': return p.chain.toLowerCase()
     case 'swapFee': return p.swapFee
@@ -46,12 +57,12 @@ function sortVal(p, k) {
 
 function toCsv(rows) {
   const head = ['pool', 'version', 'chain', 'address', 'fee_tier', 'fee_source', 'tvl_usd',
-    'volume_24h_usd', 'fees_24h_usd_estimated', 'fee_apr_pct_estimated', 'vol_over_tvl', 'txns_24h', 'created', 'flags']
+    'volume_24h_usd', 'fees_24h_usd_estimated', 'fee_apr_pct_estimated', 'vol_over_tvl', 'txns_24h', 'created', 'app_listing', 'flags']
   const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   return [head.join(','), ...rows.map((p) => [
     p.name, 'v' + p.version, p.chain, p.address, p.swapFee ?? '', p.feeSource, p.tvl,
     p.vol24, p.fees24 ?? '', feeApr(p)?.toFixed(2) ?? '', p.tvl > 0 ? (p.vol24 / p.tvl).toFixed(3) : '',
-    p.txns24, p.created, (p.flags || []).join(' '),
+    p.txns24, p.created, p.listing, (p.flags || []).join(' '),
   ].map(esc).join(','))].join('\n')
 }
 
@@ -63,6 +74,7 @@ export default function PoolTable({ data }) {
   const [ver, setVer] = useState('ALL')
   const [minTvl, setMinTvl] = useState(1000)
   const [hideSuspect, setHideSuspect] = useState(true)
+  const [onlyHidden, setOnlyHidden] = useState(false)
 
   const chains = useMemo(() => {
     const m = new Map()
@@ -78,6 +90,7 @@ export default function PoolTable({ data }) {
         (ver === 'ALL' || p.version === +ver) &&
         p.tvl >= minTvl &&
         (!hideSuspect || !(p.flags || []).includes('vol-tvl-outlier')) &&
+        (!onlyHidden || p.listing === 'unlisted' || p.listing === 'blocked') &&
         (!needle || (p.name || '').toLowerCase().includes(needle) ||
           p.address?.toLowerCase().includes(needle) || p.chain.toLowerCase().includes(needle))
     )
@@ -91,7 +104,7 @@ export default function PoolTable({ data }) {
       return sort.d === 'asc' ? va - vb : vb - va
     })
     return out
-  }, [all, q, chain, ver, minTvl, hideSuspect, sort])
+  }, [all, q, chain, ver, minTvl, hideSuspect, onlyHidden, sort])
 
   const click = (k) =>
     setSort((s) => (s.k === k ? { k, d: s.d === 'asc' ? 'desc' : 'asc' }
@@ -101,6 +114,8 @@ export default function PoolTable({ data }) {
   const volSum = rows.reduce((a, p) => a + p.vol24, 0)
   const feeSum = rows.reduce((a, p) => a + (p.fees24 || 0), 0)
   const unknownFee = rows.filter((p) => p.swapFee == null).length
+  const hiddenRows = rows.filter((p) => p.listing === 'unlisted' || p.listing === 'blocked')
+  const hiddenTvl = hiddenRows.reduce((a, p) => a + p.tvl, 0)
 
   function downloadCsv() {
     const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' })
@@ -121,6 +136,13 @@ export default function PoolTable({ data }) {
         <div>
           <span className="sl">Fees 24h (est.)</span>
           <span className="sv">{fmtUsd(feeSum)}<span className="sv-sub"> · {unknownFee} unknown</span></span>
+        </div>
+        <div>
+          <span className="sl">Not in the Uniswap app</span>
+          <span className="sv" style={{ color: 'var(--amber)' }}>
+            {hiddenRows.length.toLocaleString()}
+            <span className="sv-sub"> · {fmtUsd(hiddenTvl)} TVL</span>
+          </span>
         </div>
         <div><span className="sl">Updated</span><span className="sv sm">{String(data.generatedAt).slice(0, 10)}</span></div>
       </div>
@@ -155,8 +177,12 @@ export default function PoolTable({ data }) {
             <option value={1000000}>$1M</option>
           </select>
         </span>
+        <button className={'fbtn' + (onlyHidden ? ' on' : '')} onClick={() => setOnlyHidden((v) => !v)}
+                title="Only pools you cannot reach by browsing the Uniswap app — a token on none of its lists, or on the unsupported list">
+          [ NOT IN THE APP ]
+        </button>
         <span className="muted tinystat" style={{ marginLeft: 'auto' }}>
-          {rows.filter((p) => p.flags?.includes('extreme-fee')).length} pools charge over 1%
+          {rows.filter((p) => p.flags?.includes('extreme-fee')).length} charge over 1%
         </span>
         <button className={'fbtn' + (hideSuspect ? ' on' : '')} onClick={() => setHideSuspect((v) => !v)}
                 title="Hide pools trading more than 50x their own TVL in 24h — usually a near-empty pool rather than a busy one, which makes the APR estimate meaningless">
@@ -188,6 +214,12 @@ export default function PoolTable({ data }) {
                     {ex
                       ? <a className="pairname" href={ex + p.address} target="_blank" rel="noreferrer">{p.name || p.address}</a>
                       : <span className="pairname">{p.name || p.address}</span>}
+                  </td>
+                  <td>
+                    <span className={'lstag ' + (LISTING[p.listing]?.cls || 'dim')}
+                          title={LISTING[p.listing]?.t}>
+                      {LISTING[p.listing]?.label || p.listing}
+                    </span>
                   </td>
                   <td><span className={'vtag v' + p.version}>v{p.version}</span></td>
                   <td><span className="chaintag">{p.short}</span></td>
@@ -239,6 +271,13 @@ export default function PoolTable({ data }) {
         1%, but permitted on v4, where some pools charge 90% or more. Those are genuine — every v3
         pool here lands on exactly one of the four canonical tiers, which is what confirms the tier
         is being read correctly.
+        {' '}<b>Not in the app.</b> Uniswap's interface only browses pools whose tokens are on its
+        own lists. Each pool is checked against the <b>default</b>, <b>extended</b> and
+        <b>unsupported</b> lists Uniswap publishes: <span className="lstag lst-hide">UNLISTED</span>
+        means a token is on none of them, so the pool is reachable only by pasting an address behind
+        warnings, and <span className="lstag lst-block">BLOCKED</span> means a token is on the
+        unsupported list outright. Both are real pools with real liquidity — being absent from the
+        app is a curation decision, not a verdict on the pool, and plenty of them are best avoided.
         {' '}<b>Coverage.</b> {data.coverageNote}
         {' '}Sourced per Uniswap version per chain, so it is not skewed toward pools that happen to
         rank highly across all DEXes at once. Data refreshed {String(data.generatedAt).slice(0, 10)}.

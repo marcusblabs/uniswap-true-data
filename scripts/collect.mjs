@@ -28,37 +28,16 @@
  */
 import fs from 'fs'
 import path from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
+
+const { CHAINS, fetchTokenLists, classifyListing } =
+  await import(pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/lib/listing.mjs')).href)
 
 const GT = 'https://api.geckoterminal.com/api/v2'
 const RATE_MS = 2300 // free tier: 30 requests/minute
 const MAX_PAGE = 10 // page 11 → 401
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
-
-// Explicit ids, verified against /networks/{net}/dexes. Never pattern-matched:
-// "uniswap" appears in velodrome's Unichain ids purely because of the chain
-// name, and a regex would silently import another DEX's pools.
-export const CHAINS = {
-  eth:         { name: 'Ethereum',  short: 'ETH',  explorer: 'https://etherscan.io/address/',
-                 dexes: { uniswap_v2: 2, uniswap_v3: 3, 'uniswap-v4-ethereum': 4 } },
-  base:        { name: 'Base',      short: 'BASE', explorer: 'https://basescan.org/address/',
-                 dexes: { 'uniswap-v2-base': 2, 'uniswap-v3-base': 3, 'uniswap-v4-base': 4 } },
-  arbitrum:    { name: 'Arbitrum',  short: 'ARB',  explorer: 'https://arbiscan.io/address/',
-                 dexes: { 'uniswap-v2-arbitrum': 2, uniswap_v3_arbitrum: 3, 'uniswap-v4-arbitrum': 4 } },
-  polygon_pos: { name: 'Polygon',   short: 'POLY', explorer: 'https://polygonscan.com/address/',
-                 dexes: { 'uniswap-v2-polygon': 2, uniswap_v3_polygon_pos: 3, 'uniswap-v4-polygon': 4 } },
-  optimism:    { name: 'Optimism',  short: 'OP',   explorer: 'https://optimistic.etherscan.io/address/',
-                 dexes: { 'uniswap-v2-optimism': 2, uniswap_v3_optimism: 3, 'uniswap-v4-optimism': 4 } },
-  unichain:    { name: 'Unichain',  short: 'UNI',  explorer: 'https://uniscan.xyz/address/',
-                 dexes: { 'uniswap-v2-unichain': 2, 'uniswap-v3-unichain': 3, 'uniswap-v4-unichain': 4 } },
-  bsc:         { name: 'BNB',       short: 'BNB',  explorer: 'https://bscscan.com/address/',
-                 dexes: { 'uniswap-v2-bsc': 2, 'uniswap-bsc': 3 } },
-  avax:        { name: 'Avalanche', short: 'AVAX', explorer: 'https://snowtrace.io/address/',
-                 dexes: { 'uniswap-v2-avalanche': 2, 'uniswap-v3-avalanche': 3, 'uniswap-v4-avalanche': 4 } },
-  monad:       { name: 'Monad',     short: 'MON',  explorer: 'https://monadexplorer.com/address/',
-                 dexes: { 'uniswap-v2-monad': 2, 'uniswap-v3-monad': 3, 'uniswap-v4-monad': 4 } },
-}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -125,6 +104,13 @@ async function collect({ maxPages = MAX_PAGE, log = console.log } = {}) {
         if (!rows.length) break
         for (const p of rows) {
           const a = p.attributes || {}
+          // Relationship ids look like "eth_0xa0b8…"; the address after the
+          // underscore is what the Uniswap token lists are keyed on.
+          const tokAddr = (rel) => {
+            const id = p.relationships?.[rel]?.data?.id || ''
+            const i = id.indexOf('_')
+            return i < 0 ? null : id.slice(i + 1).toLowerCase()
+          }
           const name = a.name || ''
           const { fee, source } = parseFee(name, version)
           const vol24 = +(a.volume_usd?.h24 || 0)
@@ -138,6 +124,8 @@ async function collect({ maxPages = MAX_PAGE, log = console.log } = {}) {
             version,
             address: a.address,
             name,
+            token0: tokAddr('base_token'),
+            token1: tokAddr('quote_token'),
             tvl: +tvl.toFixed(2),
             vol24: +vol24.toFixed(2),
             vol6h: +(+(a.volume_usd?.h6 || 0)).toFixed(2),
@@ -163,8 +151,15 @@ async function collect({ maxPages = MAX_PAGE, log = console.log } = {}) {
 }
 
 const started = Date.now()
+console.log("fetching Uniswap's own token lists (these decide what its app shows)…")
+const listSets = await fetchTokenLists()
+
 console.log('collecting Uniswap pools from GeckoTerminal (explicit dex ids, per version)…')
 const { pools, calls } = await collect()
+
+for (const p of pools) {
+  p.listing = classifyListing(p, CHAINS[p.net]?.chainId, listSets)
+}
 
 // Quality flags, computed once here so the UI never has to infer them.
 for (const p of pools) {
@@ -177,6 +172,8 @@ for (const p of pools) {
   // almost the entire trade. Verified as genuine — v3 fees land exactly on the
   // four canonical tiers, so the parse is not at fault.
   if (p.swapFee != null && p.swapFee > 0.01) flags.push('extreme-fee')
+  if (p.listing === 'unlisted') flags.push('unlisted')
+  if (p.listing === 'blocked') flags.push('blocked')
   p.flags = flags
 }
 
@@ -206,6 +203,7 @@ const out = {
     byVersion,
     feeUnknown: pools.filter((p) => p.swapFee == null).length,
     noTvl: pools.filter((p) => !(p.tvl > 0)).length,
+    byListing: pools.reduce((m, p) => ({ ...m, [p.listing]: (m[p.listing] || 0) + 1 }), {}),
   },
   chains: Object.values(CHAINS).map((c) => ({ name: c.name, short: c.short, explorer: c.explorer })),
   pools,
@@ -219,5 +217,9 @@ console.log(`\nwrote public/pools.json — ${pools.length} pools, ${(fs.statSync
 console.log('  by chain  :', Object.entries(byChain).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '))
 console.log('  by version:', JSON.stringify(byVersion))
 console.log(`  fee unknown: ${out.counts.feeUnknown}   zero TVL: ${out.counts.noTvl}`)
+console.log('  listing   :', JSON.stringify(out.counts.byListing))
+const hidden = pools.filter((p) => (p.listing === 'unlisted' || p.listing === 'blocked') && p.tvl >= 10000)
+console.log(`  NOT browsable in the Uniswap app, with TVL >= $10k: ${hidden.length}`)
+console.log(`    holding $${Math.round(hidden.reduce((a, p) => a + p.tvl, 0)).toLocaleString()} of liquidity`)
 console.log(`  total TVL : $${Math.round(pools.reduce((a, p) => a + p.tvl, 0)).toLocaleString()}`)
 console.log(`  total 24h : $${Math.round(pools.reduce((a, p) => a + p.vol24, 0)).toLocaleString()}`)

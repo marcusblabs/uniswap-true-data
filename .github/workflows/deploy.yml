@@ -1,8 +1,9 @@
 name: Refresh pool data and deploy
 
-# GeckoTerminal's free tier allows 30 requests a minute and the collector makes
-# a few hundred, so a full pass takes ~10-15 minutes. That belongs in CI once a
-# night, never in a page load.
+# GeckoTerminal's free tier allows 30 requests a minute and throttles harder
+# when it has seen recent traffic: observed runs ranged from 20 minutes to 143.
+# The job is given room for the bad case, and keeps the committed pools.json if
+# it still does not finish. Either way this belongs in CI, never in a page load.
 
 on:
   schedule:
@@ -21,7 +22,7 @@ concurrency:
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 

@@ -300,3 +300,9 @@ td.num.est-val { color: #d9cfae; }
 .pairname { font-weight: 500; }
 .feepill { font-size: 10.5px; font-weight: 600; color: var(--muted); }
 .extreme { color: var(--red); font-weight: 700; }
+.lstag { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; padding: 1px 6px;
+         border-radius: 4px; border: 1px solid var(--line); white-space: nowrap; }
+.lstag.lst-ok    { color: var(--muted); }
+.lstag.lst-warn  { color: var(--purple-soft); border-color: rgba(127,106,232,.4); }
+.lstag.lst-hide  { color: var(--amber); border-color: rgba(242,192,99,.5); background: rgba(242,192,99,.12); }
+.lstag.lst-block { color: var(--red);   border-color: rgba(242,99,110,.5);  background: rgba(242,99,110,.12); }

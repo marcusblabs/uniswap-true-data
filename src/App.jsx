@@ -26,14 +26,16 @@ export default function App() {
       <div className="head">
         <h1>
           Uniswap True Data
-          <span className="tag">v2 · v3 · v4 — nine chains</span>
+          <span className="tag">v2 · v3 · v4 — the seven Balancer-v3 chains</span>
         </h1>
         <p>
-          Uniswap pools with <b>TVL, volume and fees</b>, sourced per version per chain rather than
-          skimmed off a global leaderboard. Every figure is labelled by how it was obtained:
-          measured values come straight from the API, and anything derived from a fee tier is marked
-          as an estimate — because the source exposes no fee field, so the tier has to be read from
-          the pool name.
+          Every Uniswap pool the data source indexes — <b>including the ones Uniswap's own app will
+          not show you</b> — with TVL, volume and fees. Sourced per version per chain rather than
+          skimmed off a global leaderboard, and scoped to the chains where Balancer v3 also runs so
+          the two are directly comparable. Every figure is labelled by how it was obtained: measured
+          values come straight from the API, anything derived from a fee tier is marked as an
+          estimate, and the <b>In the app?</b> column says whether Uniswap's interface would surface
+          the pool at all.
         </p>
       </div>
 
