@@ -8,6 +8,23 @@ const fmtUsd = (v) => {
   if (Math.abs(n) >= 1e3) return '$' + (n / 1e3).toFixed(0) + 'k'
   return '$' + n.toFixed(0)
 }
+/**
+ * TVL bound entry. Accepts 1000, 1k, 2.5M, $1.2b, 250,000 — the forms people actually
+ * type — and a blank meaning "no bound on this side".
+ *
+ * Three outcomes, deliberately distinct: null for blank, NaN for something unreadable,
+ * a number otherwise. Collapsing unreadable into 0 would silently filter the table on a
+ * typo with nothing on screen to explain it.
+ */
+function parseAmount(str) {
+  const t = String(str ?? '').trim().replace(/[$,\s_]/g, '')
+  if (!t) return null
+  const m = /^(\d*\.?\d+)([kmb])?$/i.exec(t)
+  if (!m) return NaN
+  const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || '').toLowerCase()] || 1
+  return parseFloat(m[1]) * mult
+}
+
 const fmtFee = (f) => (f == null ? null : (f * 100).toFixed(f < 0.001 ? 3 : 2).replace(/\.?0+$/, '') + '%')
 
 // Fee-derived figures are estimates: GeckoTerminal has no fee field, so the
@@ -105,7 +122,10 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
   const [q, setQ] = useState('')
   const [chain, setChain] = useState('ALL')
   const [ver, setVer] = useState('ALL')
-  const [minTvl, setMinTvl] = useState(1000)
+  // Held as the text the user typed, not a number, so "2.5m" survives a re-render and
+  // a half-typed value never round-trips into something they did not write.
+  const [minTvl, setMinTvl] = useState('1k')
+  const [maxTvl, setMaxTvl] = useState('')
   const [hideSuspect, setHideSuspect] = useState(true)
   const [onlyHidden, setOnlyHidden] = useState(false)
   // Uniswap's unsupported list is its own scam/warning blocklist. Excluded by
@@ -133,6 +153,16 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [all])
 
+  const loRaw = parseAmount(minTvl)
+  const hiRaw = parseAmount(maxTvl)
+  const badMin = Number.isNaN(loRaw)
+  const badMax = Number.isNaN(hiRaw)
+  // An unreadable bound is treated as no bound and flagged, rather than as zero — showing
+  // everything with a visible warning beats showing nothing for no stated reason.
+  const lo = badMin || loRaw == null ? -Infinity : loRaw
+  const hi = badMax || hiRaw == null ? Infinity : hiRaw
+  const inverted = lo > hi
+
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const out = all.filter(
@@ -140,7 +170,7 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
         (showFlagged || p.listing !== 'blocked') &&
         (chain === 'ALL' || p.chain === chain) &&
         (ver === 'ALL' || p.version === +ver) &&
-        p.tvl >= minTvl &&
+        p.tvl >= lo && p.tvl <= hi &&
         (!hideSuspect || !(p.flags || []).includes('vol-tvl-outlier')) &&
         (!onlyHidden || p.listing === 'unlisted' || p.listing === 'blocked') &&
         (!needle || (p.name || '').toLowerCase().includes(needle) ||
@@ -156,7 +186,7 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
       return sort.d === 'asc' ? va - vb : vb - va
     })
     return out
-  }, [all, q, chain, ver, minTvl, hideSuspect, onlyHidden, showFlagged, sort])
+  }, [all, q, chain, ver, lo, hi, hideSuspect, onlyHidden, showFlagged, sort])
 
   const click = (k) =>
     setSort((s) => (s.k === k ? { k, d: s.d === 'asc' ? 'desc' : 'asc' }
@@ -271,14 +301,33 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
             <option value="3">v3</option><option value="4">v4</option>
           </select>
         </span>
-        <span className="fgroup">
-          <span className="flabel">MIN-TVL</span>
-          <select value={minTvl} onChange={(e) => setMinTvl(+e.target.value)}>
-            <option value={0}>ANY</option><option value={1000}>$1K</option>
-            <option value={10000}>$10K</option><option value={100000}>$100K</option>
-            <option value={1000000}>$1M</option>
-          </select>
+        <span className="fgroup"
+              title="TVL range in USD. Accepts 1000, 1k, 2.5m, 1b. Leave either side blank for no bound on it.">
+          <span className="flabel">TVL</span>
+          <input className={'frange' + (badMin ? ' bad' : '')} list="tvlsteps" value={minTvl}
+                 placeholder="min" aria-label="minimum TVL" inputMode="decimal" spellCheck={false}
+                 onChange={(e) => setMinTvl(e.target.value)} />
+          <span className="fdash">–</span>
+          <input className={'frange' + (badMax ? ' bad' : '')} list="tvlsteps" value={maxTvl}
+                 placeholder="max" aria-label="maximum TVL" inputMode="decimal" spellCheck={false}
+                 onChange={(e) => setMaxTvl(e.target.value)} />
+          {(minTvl || maxTvl) && (
+            <button className="fclear" title="clear the TVL range"
+                    onClick={() => { setMinTvl(''); setMaxTvl('') }}>✕</button>
+          )}
         </span>
+        {/* Suggestions, not a fixed set — the field still takes any number typed into it. */}
+        <datalist id="tvlsteps">
+          <option value="1k" /><option value="10k" /><option value="100k" />
+          <option value="1m" /><option value="10m" /><option value="100m" /><option value="1b" />
+        </datalist>
+        {(badMin || badMax || inverted) && (
+          <span className="rangewarn">
+            {badMin || badMax
+              ? `can't read "${badMin ? minTvl : maxTvl}" — try 250k or 1.5m; that side is unbounded for now`
+              : 'min is above max, so nothing can match'}
+          </span>
+        )}
         <button className={'fbtn' + (onlyHidden ? ' on' : '')} onClick={() => setOnlyHidden((v) => !v)}
                 title="Only pools you cannot reach by browsing the Uniswap app">
           [ NOT IN THE APP ]

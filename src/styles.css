@@ -230,6 +230,24 @@ table.pooltable { width: 100%; border-collapse: collapse; font-size: 13px; }
   background: transparent; border: 0; color: var(--text); font-family: inherit;
   font-size: 12px; font-weight: 600; padding: 5px 6px; min-width: 0; outline: none; cursor: pointer;
 }
+/* TVL range entry: two bounds sharing one bordered group, so the pair reads as a single
+   control rather than two loose inputs. */
+.fgroup .frange {
+  background: transparent; border: 0; color: var(--text); font-family: inherit;
+  font-size: 12px; font-weight: 600; padding: 5px 4px; width: 60px; min-width: 0;
+  outline: none; text-align: right;
+}
+.fgroup .frange::placeholder { color: var(--muted); font-weight: 500; }
+.fgroup .frange:focus { color: #fff; }
+.fgroup .frange.bad { color: var(--amber); }
+.fgroup .fdash { color: var(--muted); display: flex; align-items: center; font-size: 12px; padding: 0 1px; }
+.fgroup .fclear {
+  background: transparent; border: 0; border-left: 1px solid var(--line); color: var(--muted);
+  padding: 0 7px; cursor: pointer; font-family: inherit; font-size: 11px;
+}
+.fgroup .fclear:hover { color: #fff; }
+.rangewarn { color: var(--amber); font-size: 11.5px; }
+
 .fbtn {
   background: var(--panel2); border: 1px solid var(--line); color: var(--purple-soft);
   border-radius: 5px; padding: 6px 10px; font-family: inherit; font-size: 11.5px;
