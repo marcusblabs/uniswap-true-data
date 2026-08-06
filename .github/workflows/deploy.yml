@@ -25,6 +25,8 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the push's base commit to see what actually changed
 
       - uses: actions/setup-node@v4
         with:
@@ -33,11 +35,42 @@ jobs:
 
       - run: npm ci
 
+      # The scrape is the entire cost of this job — every recent run took 35 to 68 minutes,
+      # including one that changed nothing but the README. A change to presentation code
+      # cannot alter what the scraper would collect, so it does not need to run.
+      #
+      # Deliberately a WHITELIST: anything not recognised means scrape. src/lib is NOT on it,
+      # because scripts/collect.mjs imports src/lib/listing.mjs — a change there really does
+      # change the collected data. Cron and manual runs always scrape.
+      - name: Decide whether to re-scrape
+        id: decide
+        run: |
+          need=true
+          if [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            if [ -n "$before" ] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              changed=$(git diff --name-only "$before" "${{ github.sha }}")
+              echo "changed in this push:"; echo "$changed" | sed 's/^/  /'
+              if ! echo "$changed" | grep -qvE '^(src/(components/|App\.jsx$|main\.jsx$|styles\.css$)|index\.html$|README\.md$|\.github/)'; then
+                need=false
+              fi
+            else
+              echo "base commit unavailable — scraping to be safe"
+            fi
+          fi
+          echo "scrape=$need" >> "$GITHUB_OUTPUT"
+          echo "decision: scrape=$need"
+
       # If GeckoTerminal is unreachable or rate-limits us out, keep the
       # committed pools.json rather than publishing an empty table.
       - name: Refresh pool data
+        if: steps.decide.outputs.scrape == 'true'
         run: npm run collect
         continue-on-error: true
+
+      - name: Skipping the scrape
+        if: steps.decide.outputs.scrape != 'true'
+        run: echo "Front-end-only change — building against the committed pools.json."
 
       - run: npm run build
 
