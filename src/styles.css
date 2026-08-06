@@ -248,6 +248,39 @@ table.pooltable { width: 100%; border-collapse: collapse; font-size: 13px; }
 .fgroup .fclear:hover { color: #fff; }
 .rangewarn { color: var(--amber); font-size: 11.5px; }
 
+/* The TVL group stacks the typed bounds over the slider inside one bordered box, so the two
+   ways of setting the same range read as one control rather than two competing ones. */
+.tvlgroup .tvlbody { display: flex; flex-direction: column; justify-content: center;
+  gap: 3px; padding: 4px 7px 6px; min-width: 168px; }
+.tvlgroup .tvlrow { display: flex; align-items: center; }
+.tvlgroup .frange { padding: 1px 3px; }
+
+/* Dual-thumb track. Two range inputs sit on top of each other, transparent, with only their
+   thumbs taking pointer events — that is what lets both be grabbed independently while
+   keeping native keyboard and focus behaviour. */
+.dual { position: relative; height: 14px; }
+.dual .dtrack, .dual .dfill { position: absolute; top: 5px; height: 4px; border-radius: 2px; }
+.dual .dtrack { left: 0; right: 0; background: var(--line); }
+.dual .dfill { background: var(--purple); }
+.dual .dthumb {
+  position: absolute; left: 0; top: 0; width: 100%; height: 14px; margin: 0;
+  -webkit-appearance: none; appearance: none; background: transparent;
+  pointer-events: none; outline: none;
+}
+.dual .dthumb::-webkit-slider-runnable-track { height: 14px; background: transparent; border: 0; }
+.dual .dthumb::-moz-range-track { height: 14px; background: transparent; border: 0; }
+.dual .dthumb::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto; width: 13px; height: 13px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--purple); cursor: grab; margin-top: 0;
+}
+.dual .dthumb::-moz-range-thumb {
+  pointer-events: auto; width: 13px; height: 13px; border-radius: 50%; box-sizing: border-box;
+  background: #fff; border: 2px solid var(--purple); cursor: grab;
+}
+.dual .dthumb:active::-webkit-slider-thumb { cursor: grabbing; }
+.dual .dthumb:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(127, 106, 232, 0.45); }
+.dual .dthumb:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px rgba(127, 106, 232, 0.45); }
+
 .fbtn {
   background: var(--panel2); border: 1px solid var(--line); color: var(--purple-soft);
   border-radius: 5px; padding: 6px 10px; font-family: inherit; font-size: 11.5px;

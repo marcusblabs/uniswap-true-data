@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 const fmtUsd = (v) => {
   const n = Number(v)
@@ -24,6 +24,29 @@ function parseAmount(str) {
   const mult = { k: 1e3, m: 1e6, b: 1e9 }[(m[2] || '').toLowerCase()] || 1
   return parseFloat(m[1]) * mult
 }
+
+/** Compact form a bound is written back as after a drag: 2500000 -> "2.5m". Chosen so it
+ *  round-trips through parseAmount, i.e. the box shows something the user could have typed. */
+function toShort(v) {
+  if (v == null || !isFinite(v) || v <= 0) return ''
+  const trim = (x) => String(+x.toPrecision(3))
+  if (v >= 1e9) return trim(v / 1e9) + 'b'
+  if (v >= 1e6) return trim(v / 1e6) + 'm'
+  if (v >= 1e3) return trim(v / 1e3) + 'k'
+  return String(Math.round(v))
+}
+
+/* TVL is distributed over seven orders of magnitude — three quarters of these pools sit under
+   $100k, which is a fifth of one percent of the way along a linear track from zero to the
+   largest pool. A linear slider would therefore spend almost all of its travel on the handful
+   of giants and give no purchase at all on the range anyone actually wants to sift. The track
+   is logarithmic for that reason.
+
+   The two ends are reserved for "no bound": the low thumb at rest means no floor, the high
+   thumb at rest means no ceiling. Without that, pushing the max fully right would assert a
+   limit exactly at the largest pool rather than removing the limit. */
+const TVL_FLOOR = 100
+const TVL_STEPS = 1000
 
 const fmtFee = (f) => (f == null ? null : (f * 100).toFixed(f < 0.001 ? 3 : 2).replace(/\.?0+$/, '') + '%')
 
@@ -153,6 +176,20 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [all])
 
+  // Ceiling comes from the data, so the track always spans exactly what exists.
+  const tvlCeil = useMemo(() => {
+    let m = 0
+    for (const p of all) if (p.tvl > m) m = p.tvl
+    return Math.max(m, TVL_FLOOR * 1000)
+  }, [all])
+  const posToVal = (t) =>
+    t <= 0 ? 0 : +(TVL_FLOOR * Math.pow(tvlCeil / TVL_FLOOR, t / TVL_STEPS)).toPrecision(2)
+  const valToPos = (v) => {
+    if (!(v > TVL_FLOOR)) return 0
+    if (v >= tvlCeil) return TVL_STEPS
+    return Math.round(TVL_STEPS * Math.log(v / TVL_FLOOR) / Math.log(tvlCeil / TVL_FLOOR))
+  }
+
   const loRaw = parseAmount(minTvl)
   const hiRaw = parseAmount(maxTvl)
   const badMin = Number.isNaN(loRaw)
@@ -162,6 +199,27 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
   const lo = badMin || loRaw == null ? -Infinity : loRaw
   const hi = badMax || hiRaw == null ? Infinity : hiRaw
   const inverted = lo > hi
+
+  const loPos = lo === -Infinity ? 0 : Math.min(valToPos(lo), TVL_STEPS)
+  const hiPos = hi === Infinity ? TVL_STEPS : Math.min(valToPos(hi), TVL_STEPS)
+  // Thumbs cannot cross. Dragging either to its own end clears that bound rather than pinning
+  // it to the extreme value, which is what "no minimum" / "no maximum" should mean.
+  const dragLo = (t) => setMinTvl(t <= 0 ? '' : toShort(posToVal(Math.min(t, hiPos))))
+  const dragHi = (t) => setMaxTvl(t >= TVL_STEPS ? '' : toShort(posToVal(Math.max(t, loPos))))
+
+  /* Overlaid range inputs mean one thumb always sits on top of the other, and the buried one
+     cannot be grabbed — worst exactly when the two meet, which is the state a user most wants
+     to escape. So the nearer thumb is raised as the pointer moves. The z-order is frozen while
+     a button is held, otherwise re-ordering mid-drag would hand the drag to the other thumb. */
+  const [grabHi, setGrabHi] = useState(true)
+  const dualRef = useRef(null)
+  const aimAt = (e) => {
+    if (e.buttons !== 0 || !dualRef.current) return
+    const r = dualRef.current.getBoundingClientRect()
+    if (!r.width) return
+    const t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * TVL_STEPS
+    setGrabHi(Math.abs(t - hiPos) <= Math.abs(t - loPos))
+  }
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -301,20 +359,38 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
             <option value="3">v3</option><option value="4">v4</option>
           </select>
         </span>
-        <span className="fgroup"
-              title="TVL range in USD. Accepts 1000, 1k, 2.5m, 1b. Leave either side blank for no bound on it.">
+        <span className="fgroup tvlgroup"
+              title="TVL range in USD. Drag the handles, or type a bound: 1000, 1k, 2.5m, 1b. The track is logarithmic because three quarters of these pools are under $100k. Either end at rest means no bound.">
           <span className="flabel">TVL</span>
-          <input className={'frange' + (badMin ? ' bad' : '')} list="tvlsteps" value={minTvl}
-                 placeholder="min" aria-label="minimum TVL" inputMode="decimal" spellCheck={false}
-                 onChange={(e) => setMinTvl(e.target.value)} />
-          <span className="fdash">–</span>
-          <input className={'frange' + (badMax ? ' bad' : '')} list="tvlsteps" value={maxTvl}
-                 placeholder="max" aria-label="maximum TVL" inputMode="decimal" spellCheck={false}
-                 onChange={(e) => setMaxTvl(e.target.value)} />
-          {(minTvl || maxTvl) && (
-            <button className="fclear" title="clear the TVL range"
-                    onClick={() => { setMinTvl(''); setMaxTvl('') }}>✕</button>
-          )}
+          <span className="tvlbody">
+            <span className="tvlrow">
+              <input className={'frange' + (badMin ? ' bad' : '')} list="tvlsteps" value={minTvl}
+                     placeholder="min" aria-label="minimum TVL" inputMode="decimal" spellCheck={false}
+                     onChange={(e) => setMinTvl(e.target.value)} />
+              <span className="fdash">–</span>
+              <input className={'frange' + (badMax ? ' bad' : '')} list="tvlsteps" value={maxTvl}
+                     placeholder="max" aria-label="maximum TVL" inputMode="decimal" spellCheck={false}
+                     onChange={(e) => setMaxTvl(e.target.value)} />
+              {(minTvl || maxTvl) && (
+                <button className="fclear" title="clear the TVL range"
+                        onClick={() => { setMinTvl(''); setMaxTvl('') }}>✕</button>
+              )}
+            </span>
+            <span className="dual" ref={dualRef} onPointerMove={aimAt}>
+              <span className="dtrack" />
+              <span className="dfill" style={{ left: (loPos / TVL_STEPS) * 100 + '%',
+                                               right: 100 - (hiPos / TVL_STEPS) * 100 + '%' }} />
+              {/* Two overlaid range inputs rather than a hand-rolled drag: keyboard, focus and
+                  screen-reader behaviour come for free. Only the thumbs take pointer events, so
+                  the lower thumb stays grabbable underneath the upper one. */}
+              <input type="range" className="dthumb" min={0} max={TVL_STEPS} value={loPos}
+                     aria-label="minimum TVL slider" onChange={(e) => dragLo(+e.target.value)}
+                     style={{ zIndex: grabHi ? 3 : 4 }} />
+              <input type="range" className="dthumb" min={0} max={TVL_STEPS} value={hiPos}
+                     aria-label="maximum TVL slider" onChange={(e) => dragHi(+e.target.value)}
+                     style={{ zIndex: grabHi ? 4 : 3 }} />
+            </span>
+          </span>
         </span>
         {/* Suggestions, not a fixed set — the field still takes any number typed into it. */}
         <datalist id="tvlsteps">
