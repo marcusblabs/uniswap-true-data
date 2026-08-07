@@ -25,6 +25,28 @@ function parseAmount(str) {
   return parseFloat(m[1]) * mult
 }
 
+/* generatedAt is a full ISO instant, but the page only ever printed its first ten
+   characters — so a table rebuilt eight hours ago and one rebuilt eight minutes ago looked
+   identical. UTC is stated rather than converted to local time, because the scrape runs in
+   UTC and a bare local clock would read differently for every viewer with nothing saying so. */
+function fmtStamp(iso) {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`
+}
+/** Relative age — the part you actually read to judge whether the data is stale. */
+function ago(iso) {
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!isFinite(ms) || ms < 0) return null
+  const m = Math.round(ms / 60000)
+  if (m < 1) return 'just now'
+  if (m < 60) return m + 'm ago'
+  const h = Math.round(m / 60)
+  if (h < 48) return h + 'h ago'
+  return Math.round(h / 24) + 'd ago'
+}
+
 /** Compact form a bound is written back as after a drag: 2500000 -> "2.5m". Chosen so it
  *  round-trips through parseAmount, i.e. the box shows something the user could have typed. */
 function toShort(v) {
@@ -150,7 +172,11 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
   const [minTvl, setMinTvl] = useState('1k')
   const [maxTvl, setMaxTvl] = useState('')
   const [hideSuspect, setHideSuspect] = useState(true)
-  const [onlyHidden, setOnlyHidden] = useState(false)
+  /* Was a boolean: show everything, or show only what the app hides. The inverse — only the
+     pools Uniswap will actually surface — was not expressible, so 'all' | 'out' | 'in'.
+     A pool whose listing could not be determined belongs to neither side and is shown only
+     under 'all', because claiming it either way would be a guess. */
+  const [appOnly, setAppOnly] = useState('all')
   // Uniswap's unsupported list is its own scam/warning blocklist. Excluded by
   // default; the toggle keeps the exclusion visible rather than silent.
   const [showFlagged, setShowFlagged] = useState(false)
@@ -230,7 +256,10 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
         (ver === 'ALL' || p.version === +ver) &&
         p.tvl >= lo && p.tvl <= hi &&
         (!hideSuspect || !(p.flags || []).includes('vol-tvl-outlier')) &&
-        (!onlyHidden || p.listing === 'unlisted' || p.listing === 'blocked') &&
+        (appOnly === 'all' ||
+          (appOnly === 'out'
+            ? (p.listing === 'unlisted' || p.listing === 'blocked')
+            : (p.listing === 'listed' || p.listing === 'search-only'))) &&
         (!needle || (p.name || '').toLowerCase().includes(needle) ||
           p.address?.toLowerCase().includes(needle) || p.chain.toLowerCase().includes(needle))
     )
@@ -244,7 +273,7 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
       return sort.d === 'asc' ? va - vb : vb - va
     })
     return out
-  }, [all, q, chain, ver, lo, hi, hideSuspect, onlyHidden, showFlagged, sort])
+  }, [all, q, chain, ver, lo, hi, hideSuspect, appOnly, showFlagged, sort])
 
   const click = (k) =>
     setSort((s) => (s.k === k ? { k, d: s.d === 'asc' ? 'desc' : 'asc' }
@@ -263,7 +292,7 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `uniswap-pools-${String(data.generatedAt).slice(0, 10)}.csv`
+    a.download = `uniswap-pools-${String(data.generatedAt).slice(0, 16).replace('T', '_').replace(':', '')}Z.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -338,7 +367,11 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
             {hiddenRows.length.toLocaleString()}<span className="sv-sub"> · {fmtUsd(hiddenTvl)} TVL</span>
           </span>
         </div>
-        <div><span className="sl">Updated</span><span className="sv sm">{String(data.generatedAt).slice(0, 10)}</span></div>
+        <div>
+          <span className="sl">Updated</span>
+          <span className="sv sm">{fmtStamp(data.generatedAt)}
+            {ago(data.generatedAt) && <span className="sv-sub"> · {ago(data.generatedAt)}</span>}</span>
+        </div>
       </div>
 
       <div className="fbar">
@@ -404,10 +437,15 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
               : 'min is above max, so nothing can match'}
           </span>
         )}
-        <button className={'fbtn' + (onlyHidden ? ' on' : '')} onClick={() => setOnlyHidden((v) => !v)}
-                title="Only pools you cannot reach by browsing the Uniswap app">
-          [ NOT IN THE APP ]
-        </button>
+        <span className="fgroup"
+              title="Filter by whether Uniswap's own interface will surface the pool. NOT IN APP is unlisted or flagged tokens — reachable only by pasting an address. IN APP ONLY is the default and extended lists. A pool whose status could not be determined appears under ALL only.">
+          <span className="flabel">IN THE APP</span>
+          <select value={appOnly} onChange={(e) => setAppOnly(e.target.value)}>
+            <option value="all">ALL</option>
+            <option value="out">NOT IN APP</option>
+            <option value="in">IN APP ONLY</option>
+          </select>
+        </span>
       </div>
 
       <div className="fbar">
@@ -495,7 +533,7 @@ export default function PoolTable({ data, onRefresh, refreshing }) {
         is reachable only by pasting an address.{' '}
         <span className="lstag lst-block">FLAGGED</span> means a token is on Uniswap's unsupported
         list — its scam/warning blocklist — and those are excluded by default.
-        {' '}<b>Coverage.</b> {data.coverageNote} Data refreshed {String(data.generatedAt).slice(0, 10)}.
+        {' '}<b>Coverage.</b> {data.coverageNote} Data refreshed {fmtStamp(data.generatedAt)}.
       </p>
     </>
   )
