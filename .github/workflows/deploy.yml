@@ -68,9 +68,38 @@ jobs:
         run: npm run collect
         continue-on-error: true
 
-      - name: Skipping the scrape
+      # `npm run collect` writes public/pools.json into the CI working copy and is never
+      # committed back, so the copy on main is frozen at whenever it was last committed by
+      # hand. Building against THAT on a skipped scrape rolls the PUBLISHED data backwards —
+      # which is exactly what happened: a front-end-only deploy replaced 2026-08-07 data with
+      # 2026-08-05 data, and the dashboard correctly reported itself two days stale.
+      #
+      # So when the scrape is skipped, take whichever of the two is newer. Never go backwards.
+      - name: Carry over the published data when the scrape is skipped
         if: steps.decide.outputs.scrape != 'true'
-        run: echo "Front-end-only change — building against the committed pools.json."
+        run: |
+          git fetch --depth=1 origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages || true
+          if git show origin/gh-pages:pools.json > /tmp/published.json 2>/dev/null; then
+            node -e '
+              const fs = require("fs")
+              let pub, cur
+              try { pub = JSON.parse(fs.readFileSync("/tmp/published.json", "utf8")) }
+              catch (e) { console.log("published pools.json is unreadable — keeping committed"); process.exit(0) }
+              cur = JSON.parse(fs.readFileSync("public/pools.json", "utf8"))
+              if (!Array.isArray(pub.pools) || !pub.pools.length) {
+                console.log("published pools.json has no pools — keeping committed"); process.exit(0)
+              }
+              const a = Date.parse(pub.generatedAt), b = Date.parse(cur.generatedAt)
+              if (isFinite(a) && isFinite(b) && a > b) {
+                fs.copyFileSync("/tmp/published.json", "public/pools.json")
+                console.log(`carried published data forward: ${cur.generatedAt} -> ${pub.generatedAt}`)
+              } else {
+                console.log(`committed copy is newer or equal (${cur.generatedAt}) — keeping it`)
+              }
+            '
+          else
+            echo "no published pools.json yet — keeping the committed copy"
+          fi
 
       - run: npm run build
 
